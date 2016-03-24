@@ -1085,6 +1085,11 @@ class ImagerService extends BaseApplicationComponent
             $this->_vignette($imagick, 'none', 'LavenderBlush3');
             $this->_vignette($imagick, '#ff9966', 'none');
         }
+        
+        if ($filterName == 'alphachannel') {
+	        $imagick->separateimagechannel( \Imagick::CHANNEL_ALPHA );
+	        $imagick->negateImage(false, \Imagick::CHANNEL_ALL);
+        }
 
     }
 
