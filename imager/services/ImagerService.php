@@ -1176,6 +1176,23 @@ class ImagerService extends BaseApplicationComponent
 
 
     /**
+     * Multiply a color layer on image
+     *
+     * @param $imagickInstance
+     * @param string $color
+     */
+
+    private function _multiplyColor($imagickInstance, $color = 'white')
+    {
+        $colorLayer = new \Imagick();
+        $colorLayer->newPseudoImage($imagickInstance->getImageWidth(), $imagickInstance->getImageHeight(), "canvas:$color");
+        $colorLayer->setImageFormat('png32');
+
+        $imagickInstance->compositeImage($colorLayer, \imagick::COMPOSITE_MULTIPLY, 0, 0);
+    }
+
+
+    /**
      * ---- Optimizations ------------------------------------------------------------------------------------------------------
      */
 
