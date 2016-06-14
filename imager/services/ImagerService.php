@@ -1061,6 +1061,11 @@ class ImagerService extends BaseApplicationComponent
                     $this->_vignette($imagickInstance, $value[0], $value[1], $value[2]);
                 }
 
+                // multiply color
+                if ($effect == 'multiplycolor') {
+                    $this->_multiplycolor($imagickInstance, $value);
+                }
+
                 // custom filter
                 if ($effect == 'customfilter') {
                     $this->_applyCustomFilter($imagickInstance, $value);
