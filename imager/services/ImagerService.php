@@ -38,6 +38,8 @@ class ImagerService extends BaseApplicationComponent
       'allowUpscale' => 'upscale',
       'pngCompressionLevel' => 'PNGC',
       'jpegQuality' => 'Q',
+      'webpQuality' => 'WQ',
+      'webpImagickOptions' => 'WIO',
       'interlace' => 'I',
       'instanceReuseEnabled' => 'REUSE',
       'watermark' => 'WM',
@@ -121,10 +123,10 @@ class ImagerService extends BaseApplicationComponent
             ImagerService::$compositeKeyTranslate['multiply'] = \imagick::COMPOSITE_MULTIPLY;
             ImagerService::$compositeKeyTranslate['overlay'] = \imagick::COMPOSITE_OVERLAY;
             ImagerService::$compositeKeyTranslate['screen'] = \imagick::COMPOSITE_SCREEN;
-            
-            ImagerService::$ditherKeyTranslate['no'] =  \Imagick::DITHERMETHOD_NO;
-            ImagerService::$ditherKeyTranslate['riemersma'] =  \Imagick::DITHERMETHOD_RIEMERSMA;
-            ImagerService::$ditherKeyTranslate['floydsteinberg'] =  \Imagick::DITHERMETHOD_FLOYDSTEINBERG;
+
+            ImagerService::$ditherKeyTranslate['no'] = \Imagick::DITHERMETHOD_NO;
+            ImagerService::$ditherKeyTranslate['riemersma'] = \Imagick::DITHERMETHOD_RIEMERSMA;
+            ImagerService::$ditherKeyTranslate['floydsteinberg'] = \Imagick::DITHERMETHOD_FLOYDSTEINBERG;
         }
     }
 
@@ -146,7 +148,7 @@ class ImagerService extends BaseApplicationComponent
 
     /**
      * Get dominant color of image
-     * 
+     *
      * @param AssetFileModel|string $image
      * @param $quality
      * @param $colorValue
@@ -173,7 +175,7 @@ class ImagerService extends BaseApplicationComponent
 
     /**
      * Gets color palette for image
-     * 
+     *
      * @param AssetFileModel|string $image
      * @param $colorCount
      * @param $quality
@@ -263,12 +265,12 @@ class ImagerService extends BaseApplicationComponent
         if (isset($transform[0])) {
             $transformedImages = array();
             foreach ($transform as $t) {
-                $transformedImage = $this->_getTransformedImage($pathsModel, $transformDefaults!=null ? array_merge($transformDefaults, $t) : $t);
+                $transformedImage = $this->_getTransformedImage($pathsModel, $transformDefaults != null ? array_merge($transformDefaults, $t) : $t);
                 $transformedImages[] = $transformedImage;
             }
             $r = $transformedImages;
         } else {
-            $transformedImage = $this->_getTransformedImage($pathsModel, $transformDefaults!=null ?  array_merge($transformDefaults, (array)$transform) : $transform);
+            $transformedImage = $this->_getTransformedImage($pathsModel, $transformDefaults != null ? array_merge($transformDefaults, (array)$transform) : $transform);
             $r = $transformedImage;
         }
 
@@ -280,7 +282,7 @@ class ImagerService extends BaseApplicationComponent
         if (craft()->request->isAjaxRequest() && $this->taskCreated && $this->getSetting('runTasksImmediatelyOnAjaxRequests')) {
             $this->_triggerTasksNow();
         }
-        
+
         return $r;
     }
 
@@ -298,13 +300,13 @@ class ImagerService extends BaseApplicationComponent
     {
         // break up the image filename to get extension and actual filename 
         $pathParts = pathinfo($paths->targetFilename);
-        
+
         if (isset($pathParts['extension'])) {
             $sourceExtension = $targetExtension = $pathParts['extension'];
         } else {
             $sourceExtension = $targetExtension = FileHelper::getExtensionByMimeType(mime_content_type($paths->sourcePath . $paths->sourceFilename));
         }
-        
+
         $filename = $pathParts['filename'];
 
         // do we want to output in a certain format?
@@ -344,11 +346,11 @@ class ImagerService extends BaseApplicationComponent
             $filterMethod = $this->_getFilterMethod($transform);
 
             if ($this->imageDriver == 'imagick' && $this->getSetting('smartResizeEnabled', $transform) && version_compare(craft()->getVersion(), '2.5', '>=')) {
-                $this->imageInstance->smartResize($resizeSize, false, $this->getSetting('jpegQuality', $transform));
+                $this->imageInstance->smartResize($resizeSize, (bool) craft()->config->get('preserveImageColorProfiles'), $this->getSetting('jpegQuality', $transform));
             } else {
                 $this->imageInstance->resize($resizeSize, $filterMethod);
             }
-
+            
             // If Image Driver is imagick and removeMetadata is true
             // remove Metadata to reduce the image size by a significant amount
             if ($this->imageDriver == 'imagick' && $this->getSetting('removeMetadata', $transform)) {
@@ -392,7 +394,16 @@ class ImagerService extends BaseApplicationComponent
             }
 
             // save the transform
-            $this->imageInstance->save($targetFilePath, $saveOptions);
+            if ($targetExtension === 'webp') {
+                if ($this->hasSupportForWebP()) {
+                    $this->_saveAsWebp($this->imageInstance, $targetFilePath, $sourceExtension, $saveOptions);
+                } else {
+                    throw new Exception(Craft::t('This version of {imageDriver} does not support the webp format. You should use “craft.imager.hasSupportForWebP” in your templates to test for it.',
+                      array('imageDriver' => $this->imageDriver == 'gd' ? 'GD' : 'Imagick')));
+                }
+            } else {
+                $this->imageInstance->save($targetFilePath, $saveOptions);
+            }
 
             // if file was created, check if optimization should be done
             if (IOHelper::fileExists($targetFilePath)) {
@@ -439,7 +450,7 @@ class ImagerService extends BaseApplicationComponent
         if (strpos($paths->targetPath, craft()->imager->getSetting('imagerSystemPath')) !== false) {
             IOHelper::clearFolder($paths->targetPath);
             craft()->templateCache->deleteCachesByElementId($asset->id);
-            
+
             if ($paths->isRemote) {
                 IOHelper::deleteFile($paths->sourcePath . $paths->sourceFilename);
             }
@@ -486,7 +497,7 @@ class ImagerService extends BaseApplicationComponent
      * @param $transform
      * @return mixed
      */
-    private function _normalizeTransform($transform, $paths=null)
+    private function _normalizeTransform($transform, $paths = null)
     {
         // if resize mode is not crop or croponly, remove position
         if (isset($transform['mode']) && (($transform['mode'] != 'crop') && ($transform['mode'] != 'croponly'))) {
@@ -514,9 +525,9 @@ class ImagerService extends BaseApplicationComponent
                 if (isset($transform['height']) && !isset($transform['width'])) {
                     $transform['width'] = round($transform['height'] * $transform['ratio']);
                     unset($transform['ratio']);
-                } else { 
+                } else {
                     // neither is set, use width from original image
-                    if ($paths!==null) {
+                    if ($paths !== null) {
                         $originalSize = getimagesize($paths->sourcePath . $paths->sourceFilename);
                         $transform['width'] = $originalSize[0];
                         $transform['height'] = round($transform['width'] / $transform['ratio']);
@@ -582,6 +593,13 @@ class ImagerService extends BaseApplicationComponent
 
                     $r .= '_' . (isset(ImagerService::$transformKeyTranslate[$k]) ? ImagerService::$transformKeyTranslate[$k] : $k) . '_' . substr(md5($watermarkString),
                         0, 10);
+                } elseif ($k == 'webpImagickOptions') {
+                    $optString = '';
+                    foreach ($v as $optK => $optV) {
+                        $optString .= ($optK . '-' . $optV . '-');
+                    }
+
+                    $r .= '_' . (isset(ImagerService::$transformKeyTranslate[$k]) ? ImagerService::$transformKeyTranslate[$k] : $k) . '_' . substr($optString, 0, strlen($optString)-1);
                 } else {
                     $r .= '_' . (isset(ImagerService::$transformKeyTranslate[$k]) ? ImagerService::$transformKeyTranslate[$k] : $k) . (is_array($v) ? implode("-",
                         $v) : $v);
@@ -816,6 +834,9 @@ class ImagerService extends BaseApplicationComponent
             case 'png':
                 return array('png_compression_level' => $this->getSetting('pngCompressionLevel', $transform));
                 break;
+            case 'webp':
+                return array('webp_quality' => $this->getSetting('webpQuality', $transform), 'webp_imagick_options' => $this->getSetting('webpImagickOptions', $transform));
+                break;
         }
         return array();
     }
@@ -937,6 +958,124 @@ class ImagerService extends BaseApplicationComponent
         $imageInstance = $backgroundImage;
     }
 
+    /**
+     * Saves image as webp
+     *
+     * @param $imageInstance
+     * @param $path
+     * @param $sourceExtension
+     * @param $saveOptions
+     * @throws Exception
+     */
+    private function _saveAsWebp($imageInstance, $path, $sourceExtension, $saveOptions)
+    {
+        if ($this->getSetting('useCwebp')) {
+            
+            // save temp file
+            $tempFile = $this->_saveTemporaryFile($imageInstance, $sourceExtension);
+            
+            // convert to webp with cwebp
+            $command = escapeshellcmd($this->getSetting('cwebpPath') . ' ' . $this->getSetting('cwebpOptions') .  ' -q ' . $saveOptions['webp_quality'] . ' ' . $tempFile . ' -o ' . $path);
+            $r = shell_exec($command);
+            
+            if (!IOHelper::fileExists($path)) {
+                throw new Exception(Craft::t('Save operation failed'));
+            }
+            
+            // delete temp file
+            IOHelper::deleteFile($tempFile);
+            
+        } else {
+            if ($this->imageDriver === 'gd') {
+                $instance = $imageInstance->getGdResource();
+
+                if (false === \imagewebp($instance, $path, $saveOptions['webp_quality'])) {
+                    throw new Exception(Craft::t('Save operation failed'));
+                }
+
+                // Fix for corrupt file bug (http://stackoverflow.com/questions/30078090/imagewebp-php-creates-corrupted-webp-files)
+                if (filesize($path) % 2 == 1) {
+                    file_put_contents($path, "\0", FILE_APPEND);
+                }
+            }
+
+            if ($this->imageDriver === 'imagick') {
+                $instance = $imageInstance->getImagick();
+
+                $instance->setImageFormat('webp');
+                $instance->setImageAlphaChannel(\Imagick::ALPHACHANNEL_ACTIVATE);
+                $instance->setBackgroundColor(new \ImagickPixel('transparent'));
+                $instance->setImageCompressionQuality($saveOptions['webp_quality']);
+                
+                $imagickOptions = $saveOptions['webp_imagick_options'];
+                
+                if ($imagickOptions && count($imagickOptions)>0) {
+                    foreach ($imagickOptions as $key=>$val) {
+                        $instance->setOption('webp:' . $key, $val);
+                    }
+                }
+                
+                $instance->writeImage($path);
+            }
+        }
+    }
+
+    /**
+     * Checks for webp support in image driver
+     *
+     * @return bool
+     */
+    public function hasSupportForWebP()
+    {
+        if ($this->imageDriver === 'gd' && function_exists('imagewebp')) {
+            return true;
+        }
+
+        if ($this->imageDriver === 'imagick' && (count(\Imagick::queryformats('WEBP')) > 0)) {
+            return true;
+        }
+
+        if ($this->getSetting('useCwebp') && $this->getSetting('cwebpPath') !== '' && file_exists($this->getSetting('cwebpPath'))) {
+            return true;
+        }
+
+        return false;
+    }
+
+
+    /**
+     * Save temporary file and return filename
+     * 
+     * @param $imageInstance
+     * @param $sourceExtension
+     * @return string
+     */
+    private function _saveTemporaryFile($imageInstance, $sourceExtension)
+    {
+        $tempPath = craft()->path->getRuntimePath() . 'imager/temp/';
+        
+        // check if the path exists
+        if (!IOHelper::getRealPath($tempPath)) {
+            IOHelper::createFolder($tempPath, craft()->config->get('defaultFolderPermissions'), true);
+
+            if (!IOHelper::getRealPath($tempPath)) {
+                throw new Exception(Craft::t('Temp folder “{tempPath}” does not exist and could not be created',
+                  array('tempPath' => $tempPath)));
+            }
+        }
+        
+        $targetFilePath = $tempPath . md5(time()) . '.' . $sourceExtension;
+
+        $saveOptions = array(
+          'jpeg_quality' => 100,
+          'png_compression_level' => 1,
+          'flatten' => true
+        );
+
+        $imageInstance->save($targetFilePath, $saveOptions);
+
+        return $targetFilePath;
+    }
 
 
     /**
@@ -1141,12 +1280,12 @@ class ImagerService extends BaseApplicationComponent
         $temporary->setImageFormat('png32');
         $temporary->drawImage($draw);
 
-        $alphaChannel = $imagickInstance->clone();
+        $alphaChannel = clone $imagickInstance;
         $alphaChannel->setImageAlphaChannel(\Imagick::ALPHACHANNEL_EXTRACT);
         $alphaChannel->negateImage(false, \Imagick::CHANNEL_ALL);
         $imagickInstance->setImageClipMask($alphaChannel);
 
-        $clone = $imagickInstance->clone();
+        $clone = clone $imagickInstance;
         $clone->compositeImage($temporary, $composite_flag, 0, 0);
         $clone->setImageOpacity($alpha);
 
@@ -1424,16 +1563,17 @@ class ImagerService extends BaseApplicationComponent
               'paths' => $paths
             ));
         }
-        
+
         $this->taskCreated = true;
     }
 
     /**
      * Method that triggers any pending tasks immediately.
      */
-    private function _triggerTasksNow () {
+    private function _triggerTasksNow()
+    {
         $url = UrlHelper::getActionUrl('tasks/runPendingTasks');
-        
+
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
 
@@ -1447,8 +1587,8 @@ class ImagerService extends BaseApplicationComponent
                 $options[CURLOPT_TIMEOUT_MS] = 500;
             } else {
                 $options[CURLOPT_TIMEOUT] = 1;
-            }            
-            
+            }
+
             curl_setopt_array($ch, $options);
             curl_exec($ch);
             $curlErrorNo = curl_errno($ch);
@@ -1463,7 +1603,7 @@ class ImagerService extends BaseApplicationComponent
             if ($httpStatus !== 200) {
                 ImagerPlugin::log("Request for running tasks immediately failed with http status $httpStatus", LogLevel::Error);
             }
-        }        
+        }
     }
 
 
@@ -1547,7 +1687,7 @@ class ImagerService extends BaseApplicationComponent
 
         return array($r, $g, $b);
     }
-    
+
     /**
      * Fixes slashes in path
      *
@@ -1560,7 +1700,7 @@ class ImagerService extends BaseApplicationComponent
     {
         $r = str_replace('//', '/', $str);
 
-        if (strlen($r)>0) {
+        if (strlen($r) > 0) {
             if ($removeInitial && ($r[0] == '/')) {
                 $r = substr($r, 1);
             }
@@ -1569,7 +1709,7 @@ class ImagerService extends BaseApplicationComponent
                 $r = substr($r, 0, strlen($r) - 1);
             }
         }
-        
+
         return $r;
     }
 

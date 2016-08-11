@@ -13,6 +13,7 @@ Whenever possible, Imager utilizes the image manipulation library [Imagine](http
 - You can even upload and serve the transformed images from AWS.
 - Optimize your created images automatically with jpegoptim, jpegtran, optipng or TinyPNG.
 - You can create interlaced/progressive images.
+- In addition to jpeg, gif and png, you can save images in webp format (if you have the necessary server requirements).
 - Crop position is relative (in percent) not confined to edges/center (but the built-in keywords still works).  
 `{ width: 600, height: 600, mode: 'crop', position: '20% 65%' }`
 - New cropZoom parameter for when you want to get a little closer.  
@@ -95,6 +96,41 @@ Defines the JPEG compression level. Higher values equals better quality and bigg
 *Default: `2`*  
 Defines the PNG compression level. PNG compression is always lossless, so this setting doesn't have any effect on quality. It only affects speed and filesize. A lower value means faster compression, but bigger filesizes. A value of 0 means "no compression", which is the preferred setting if you're doing any post optimizations of png images (with Optipng or TinyPNG).
 
+### webpQuality [int]
+*Default: `80`*  
+Defines the WEBP compression level. Higher values equals better quality and bigger filesizes.
+
+### webpImagickOptions [array]
+*Default: `array()`*  
+Additional options you want to pass to Imagick when creating webp files. See [the ImageMagick documentation](http://www.imagemagick.org/script/webp.php) for possible options (although, all are not supported by Imagick).
+
+Example on how to use it in config files:
+
+    'webpImagickOptions' => array(
+        'lossless' => 'true',
+        'method' => '5',
+    ),
+    
+Example on how to use it in your template code:
+    
+    {% set webpImage = craft.imager.transformImage(image, { width: 500, format: 'webp', webpImagickOptions: { lossless: 'true', method: '1' } }) %}
+
+### useCwebp [bool]
+*Default: `false`*  
+If you don't have support for webp in the image driver you're using (GD or Imagick), you can set this to `true` to use the cwebp command line tool instead. cwebp needs to be installed
+on the server, but is available on most linux distros.
+
+When using cwebp, Imager will first create a temprary, high quality, transformed image in the source format (jpeg, png or gif), and then convert this to webp.
+Since this results in two images being created for each transformed image, the operation is a bit slower (~15-20%) than using the image driver directly. 
+
+### cwebpPath [string]
+*Default: `/usr/bin/cwebp`*  
+Path to the cwebp binary.
+
+### cwebpOptions [string]
+*Default: ``*  
+Options to pass o the cwebp binary (use `cwebp -longhelp` to see available options). Quality (-q) is automatically added based on `webpQuality`.  
+
 ### interlace [bool|string]
 *Default: `false`*  
 *Allowed values: `false`, `true` (`'line'`), `'none'`, `'line'`, `'plane'`, `'partition'`*   
@@ -164,6 +200,10 @@ When doing an transform, Imager creates a filename based on the properties in th
 If set to `false`, the filename will contain the generated string in clear text. This can result in really long filenames, but is great for debugging purposes.
 
 If set to `true`, the whole filename is hashed. This will result in a short, but obscured, filename.
+
+### hashPath [bool]
+*Default: `false`*  
+When enabled, the path of the transformed asset will be hashed.  
 
 ### hashRemoteUrl [bool|string]
 *Default: `false`*  
@@ -383,6 +423,18 @@ Outputs a srcset string from an array of transformed images.
 **images**: An array of Imager_ImageModel objects, or anything else that support the interface.  
 **descriptior**: A string indicating which size descriptor should be used in the srcset. *Only 'w' is supported at the moment.*
 
+### craft.imager.serverSupportsWebp()
+Returns `true` or `false` depending on if the server has support for webp or not. This could either indicate built in support for webp in the current image driver, GD or Imagick, or the presence of the cwebp binary if this has been enabled.  
+
+### craft.imager.clientSupportsForWebp()
+Returns `true` or `false` depending on if the client has support for webp or not. This is deducted from the Accept header that the client sends.   
+  
+*If you use template caching, or any kind of front side cache (Varnish, Fastly, etc), make sure you create different caches based on if the client has support for webp or not. For template caching, adding a string to the key based on this variable, is one way to solve it. Example:*
+  
+    {% cache using key "my-content" ~ (craft.imager.clientSupportsForWebp ? "-with-webp") %}  
+    ...
+    {% endcache %}
+ 
 ### craft.imager.getDominantColor(image [, quality=10, colorValue='hex'])
 Gets the dominant color of an image. Uses [Color Thief](https://github.com/ksubileau/color-thief-php) for all the magic.
 
@@ -412,7 +464,7 @@ The following parameters are available in the transform object.
 
 ### format [string]
 *Default: `null`*  
-*Allowed values: `null`, `'jpg'`, `'png'`, `'gif'`*   
+*Allowed values: `null`, `'jpg'`, `'png'`, `'gif'`, `'webp'`*   
 Format of the created image. If unset (default) it will be the same format as the source image.
 
 ### width [int]
@@ -639,12 +691,6 @@ When transforming a remote image, the image will be downloaded and cached for th
 
 ---
 
-Performance
----
-The main motivation behind making the plugin (before I went down the rabbit hole full of image effects, crop options, etc), was to improve the performance when doing image transforms. When using the <picture> element and srcset-attribute, there is usually 50+ image transforms being done in most of our templates. That leads to alot of database queries. Did I succeed? Benchmarks coming soon (but, yes). 
-
----
-
 Price, license and support
 ---
 The plugin is released under the MIT license, meaning you can do what ever you want with it as long as you don't blame me. **It's free**, which means there is absolutely no support included, but you might get it anyway. Just post an issue here on github if you have one, and I'll see what I can do. :)
@@ -653,43 +699,4 @@ The plugin is released under the MIT license, meaning you can do what ever you w
 
 Changelog
 ---
-### 1.0.8 -- 2016.06.13
-* Added 'getDataUri' and 'getBase64Encoded' to Imager_ImageModel for all your inline needs (joshangell).
-* Imager now works with models that extends AssetFileModel (mike27cubes).
-
-### 1.0.7 -- 2016.04.20
-* Fixed encoding of placeholder svg (for realz this time).    
-
-### 1.0.6 -- 2016.04.19
-* Placeholder svg is now properly url encoded.    
-* Converted spaces in generated filenames to `-`.
-* Fixed a bug where uppercase file extensions would result in save options (like compression) being ignored.
-* Allow protocol-independent URLs for remote images (Thanks, intoeetive!)
-
-### 1.0.5 -- 2016.03.23
-* Added config setting `'curlOptions'` for adding or overriding curl options (see documentation for details).
-* If a task was created during a transform, and the request was done with ajax, any pending tasks will be triggered immediately. New config setting `'runTasksImmediatelyOnAjaxRequests'` can be used to override this behavior.   
-* Better error handling and reporting when downloading remote images. Requests that time out will no longer leave an incomplete image in the remote images cache.
-* Image urls for remote images are now url encoded to fix bugs with non-ascii characters in filenames. Transformed image filename is always converted to ascii.  
-* Cached remote file is now deleted when an image's transforms are cleared.
-
-### 1.0.4 -- 2016.01.27
-* Fixed bug in AWS upload.
-
-### 1.0.3 -- 2016.01.27
-* Fixed bug in `fixSlashes` that would create an error if run on an empty string (i.e empty awsFolder).
-* Added size attribute and getSize method to `Imager_Imagemodel`.
-
-### 1.0.2 -- 2016.01.22
-* Added configuration setting `'awsFolder'` that lets you put transformed images in a subfolder on the bucket.
-* Imager now tries to determine which format an image is if the file doesn't have an extension.
-* You can now resize images based on ratio only, width or height is no longer necessary.
-* Improved downloading of remote images, now supporting both cURL (default) and `file_get_contents`. An exception is raised if neither is available.
-* When a cURL request for a remote image returns a HTTP 404, but the contents of the response is an image, the image will be returned correctly
-            
-### 1.0.1 -- 2016.01.05
-* The ImagerService class had an unnecessary dependency on Imagick, which would cause an error in the settings panel if Imagick was not installed.
-
-### 1.0.0 -- 2016.01.02
-* Beta has ended, initial release for all practical purposes.
-* Possible breaking change: The transformImage method now takes a new transformDefaults parameter. This is now the third parameter, bumping configOverrides to the fourth position.
+See [releases.json](https://raw.githubusercontent.com/aelvan/Imager-Craft/master/releases.json).

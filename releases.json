@@ -1,5 +1,24 @@
 [
     {
+        "version": "1.1.0",
+        "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
+        "date": "2016-08-03T20:17:00+02:00",
+        "notes": [
+            "[Added] Support for webp image format.",
+            "[Added] Config setting to hash the file path into a single folder (This one's for you carlcs)",
+            "[Fixed] Fix to respect preserveImageColorProfiles set in craft config (fyrebase)"
+        ]
+    },    
+    {
+        "version": "1.0.9",
+        "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
+        "date": "2016-06-29T19:51:00+02:00",
+        "notes": [
+            "[Fixed] Deprecated Imagick clone method replaced (fThues).",
+            "[Fixed] Fixed an oversight where external urls served over https wouldn't work." 
+        ]
+    }, 
+    {
         "version": "1.0.8",
         "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
         "date": "2016-06-13T14:28:00+02:00",

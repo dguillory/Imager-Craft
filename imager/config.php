@@ -26,6 +26,11 @@ return array(
   'cacheDurationRemoteFiles' => 1209600, // 14 days
   'jpegQuality' => 80,
   'pngCompressionLevel' => 2,
+  'webpQuality' => 80,
+  'webpImagickOptions' => array(), // additional options you want to pass to Imagick via '$instance->setOption('webp:option', 'value')'.
+  'useCwebp' => false,
+  'cwebpPath' => '/usr/bin/cwebp',
+  'cwebpOptions' => '', // additional options you want to pass to cwebp. Quality is set automatically.
   'interlace' => false, // false, true ('line'), 'none', 'line', 'plane', 'partition'
   'allowUpscale' => true,
   'resizeFilter' => 'lanczos',
@@ -35,6 +40,7 @@ return array(
   'position' => '50% 50%',
   'letterbox' => array('color'=>'#000', 'opacity'=>0),
   'hashFilename' => 'postfix', // true, false, or 'postfix' (meaning only the generated part of the filename is hashed)
+  'hashPath' => false, 
   'hashRemoteUrl' => false, // true, false, or 'host' (meaning only the host part of the url is hashed) 
   'instanceReuseEnabled' => false,
   
