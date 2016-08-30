@@ -50,6 +50,9 @@ return array(
   'jpegtranEnabled' => false,
   'jpegtranPath' => '/usr/bin/jpegtran',
   'jpegtranOptionString' => '-optimize -copy none',
+  'mozjpegEnabled' => false,
+  'mozjpegPath' => '/usr/bin/mozjpeg',
+  'mozjpegOptionString' => '-optimize -copy none',
   'optipngEnabled' => false,
   'optipngPath' => '/usr/bin/optipng',
   'optipngOptionString' => '-o5',
@@ -66,7 +69,11 @@ return array(
   'awsCacheDuration' => 1209600, // 14 days
   'awsRequestHeaders' => array(),
   'awsStorageType' => 'standard', // 'standard' or 'rrs' (reduced redundancy storage)
-  
+
+  'cloudfrontInvalidateEnabled' => false,
+  'cloudfrontDistributionId' => '',
+    
   'curlOptions' => array(),
   'runTasksImmediatelyOnAjaxRequests' => true,
+  'clearKey' => '', // Key that should be passed to the clear controller action. Empty string means clearing is disabled.
 );

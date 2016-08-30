@@ -70,6 +70,9 @@ class Imager_ConfigModel extends BaseModel
           'jpegtranEnabled' => array(AttributeType::Bool),
           'jpegtranPath' => array(AttributeType::String),
           'jpegtranOptionString' => array(AttributeType::String),
+          'mozjpegEnabled' => array(AttributeType::Bool),
+          'mozjpegPath' => array(AttributeType::String),
+          'mozjpegOptionString' => array(AttributeType::String),
           'optipngEnabled' => array(AttributeType::Bool),
           'optipngPath' => array(AttributeType::String),
           'optipngOptionString' => array(AttributeType::String),
@@ -85,9 +88,12 @@ class Imager_ConfigModel extends BaseModel
           'awsCacheDuration' => array(AttributeType::Number),
           'awsRequestHeaders' => array(AttributeType::Mixed),
           'awsStorageType' => array(AttributeType::String),
+          'cloudfrontInvalidateEnabled' => array(AttributeType::String),
+          'cloudfrontDistributionId' => array(AttributeType::String),
           'removeMetadata' => array(AttributeType::Bool),
           'curlOptions' => array(AttributeType::Mixed),
           'runTasksImmediatelyOnAjaxRequests' => array(AttributeType::Bool),
+          'clearKey' => array(AttributeType::String),
         );
     }
 

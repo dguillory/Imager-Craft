@@ -12,7 +12,6 @@ namespace Craft;
  */
 
 use Tinify;
-use ColorThief\ColorThief;
 
 class ImagerService extends BaseApplicationComponent
 {
@@ -20,8 +19,8 @@ class ImagerService extends BaseApplicationComponent
     var $imagineInstance = null;
     var $imageInstance = null;
     var $configModel = null;
-    var $s3 = null;
     var $taskCreated = false;
+    var $invalidatePaths = array();
 
     // translate dictionary for translating transform keys into filename markers
     public static $transformKeyTranslate = array(
@@ -144,63 +143,7 @@ class ImagerService extends BaseApplicationComponent
             }
         }
     }
-
-
-    /**
-     * Get dominant color of image
-     *
-     * @param AssetFileModel|string $image
-     * @param $quality
-     * @param $colorValue
-     * @return bool|string
-     * @throws Exception
-     */
-    public function getDominantColor($image, $quality, $colorValue)
-    {
-        $pathsModel = new Imager_ImagePathsModel($image);
-
-        if (!IOHelper::getRealPath($pathsModel->sourcePath)) {
-            throw new Exception(Craft::t('Source folder “{sourcePath}” does not exist',
-              array('sourcePath' => $pathsModel->sourcePath)));
-        }
-
-        if (!IOHelper::fileExists($pathsModel->sourcePath . $pathsModel->sourceFilename)) {
-            throw new Exception(Craft::t('Requested image “{fileName}” does not exist in path “{sourcePath}”',
-              array('fileName' => $pathsModel->sourceFilename, 'sourcePath' => $pathsModel->sourcePath)));
-        }
-
-        $dominantColor = ColorThief::getColor($pathsModel->sourcePath . $pathsModel->sourceFilename, $quality);
-        return $colorValue == 'hex' ? ImagerService::rgb2hex($dominantColor) : $dominantColor;
-    }
-
-    /**
-     * Gets color palette for image
-     *
-     * @param AssetFileModel|string $image
-     * @param $colorCount
-     * @param $quality
-     * @param $colorValue
-     * @return array
-     * @throws Exception
-     */
-    public function getColorPalette($image, $colorCount, $quality, $colorValue)
-    {
-        $pathsModel = new Imager_ImagePathsModel($image);
-
-        if (!IOHelper::getRealPath($pathsModel->sourcePath)) {
-            throw new Exception(Craft::t('Source folder “{sourcePath}” does not exist',
-              array('sourcePath' => $pathsModel->sourcePath)));
-        }
-
-        if (!IOHelper::fileExists($pathsModel->sourcePath . $pathsModel->sourceFilename)) {
-            throw new Exception(Craft::t('Requested image “{fileName}” does not exist in path “{sourcePath}”',
-              array('fileName' => $pathsModel->sourceFilename, 'sourcePath' => $pathsModel->sourcePath)));
-        }
-
-        $palette = ColorThief::getPalette($pathsModel->sourcePath . $pathsModel->sourceFilename, $colorCount, $quality);
-
-        return $colorValue == 'hex' ? $this->_paletteToHex($palette) : $palette;
-    }
+    
 
     /**
      * Do an image transform
@@ -282,7 +225,12 @@ class ImagerService extends BaseApplicationComponent
         if (craft()->request->isAjaxRequest() && $this->taskCreated && $this->getSetting('runTasksImmediatelyOnAjaxRequests')) {
             $this->_triggerTasksNow();
         }
-
+        
+        if (count($this->invalidatePaths)>0) {
+            craft()->imager_aws->invalidateCloudfrontPaths($this->invalidatePaths);
+            $this->invalidatePaths = array();
+        }
+        
         return $r;
     }
 
@@ -325,8 +273,10 @@ class ImagerService extends BaseApplicationComponent
         /**
          * Check if the image already exists, if caching is turned on or if the cache has expired.
          */
-        if (!$this->getSetting('cacheEnabled',
-            $transform) || !IOHelper::fileExists($targetFilePath) || (IOHelper::getLastTimeModified($targetFilePath)->format('U') + $this->getSetting('cacheDuration', $transform) < time())
+
+        if (!$this->getSetting('cacheEnabled', $transform) ||
+          !IOHelper::fileExists($targetFilePath) ||
+          (($this->getSetting('cacheDuration', $transform) !== false) && (IOHelper::getLastTimeModified($targetFilePath)->format('U') + $this->getSetting('cacheDuration', $transform) < time()))
         ) {
             // create the imageInstance. only once if reuse is enabled, or always
             if (!$this->getSetting('instanceReuseEnabled', $transform) || $this->imageInstance == null) {
@@ -346,7 +296,7 @@ class ImagerService extends BaseApplicationComponent
             $filterMethod = $this->_getFilterMethod($transform);
 
             if ($this->imageDriver == 'imagick' && $this->getSetting('smartResizeEnabled', $transform) && version_compare(craft()->getVersion(), '2.5', '>=')) {
-                $this->imageInstance->smartResize($resizeSize, (bool) craft()->config->get('preserveImageColorProfiles'), $this->getSetting('jpegQuality', $transform));
+                $this->imageInstance->smartResize($resizeSize, (bool)craft()->config->get('preserveImageColorProfiles'), $this->getSetting('jpegQuality', $transform));
             } else {
                 $this->imageInstance->resize($resizeSize, $filterMethod);
             }
@@ -392,7 +342,7 @@ class ImagerService extends BaseApplicationComponent
             if (($sourceExtension != $targetExtension) && ($sourceExtension != 'jpg') && ($targetExtension == 'jpg') && ($this->getSetting('bgColor', $transform) != '')) {
                 $this->_applyBackgroundColor($this->imageInstance, $this->getSetting('bgColor', $transform));
             }
-
+            
             // save the transform
             if ($targetExtension === 'webp') {
                 if ($this->hasSupportForWebP()) {
@@ -414,6 +364,9 @@ class ImagerService extends BaseApplicationComponent
                     if ($this->getSetting('jpegtranEnabled', $transform)) {
                         $this->postOptimize('jpegtran', $targetFilePath);
                     }
+                    if ($this->getSetting('mozjpegEnabled', $transform)) {
+                        $this->postOptimize('mozjpeg', $targetFilePath);
+                    }
                 }
 
                 if ($targetExtension == 'png' && $this->getSetting('optipngEnabled', $transform)) {
@@ -426,14 +379,19 @@ class ImagerService extends BaseApplicationComponent
 
                 // Upload to AWS if enabled
                 if ($this->getSetting('awsEnabled')) {
-                    $this->uploadToAWS($targetFilePath);
+                    craft()->imager_aws->uploadToAWS($targetFilePath);
+                    
+                    // Invalidate cloudfront distribution if enabled
+                    if ($this->getSetting('cloudfrontInvalidateEnabled')) {
+                        $parsedUrl = parse_url($targetFileUrl);
+                        $this->invalidatePaths[] = $parsedUrl['path'];
+                    }
                 }
             }
         }
 
         // create Imager_ImageModel for transformed image
         $imagerImage = new Imager_ImageModel($targetFilePath, $targetFileUrl, $paths, $transform);
-
 
         return $imagerImage;
     }
@@ -457,6 +415,21 @@ class ImagerService extends BaseApplicationComponent
         }
     }
 
+    /**
+     * Clear all image transforms caches
+     */
+    public function deleteImageTransformCaches()
+    {
+        IOHelper::clearFolder(craft()->imager->getSetting('imagerSystemPath'));
+    }
+
+    /**
+     * Clear all remote image caches
+     */
+    public function deleteRemoteImageCaches()
+    {
+        IOHelper::clearFolder(craft()->path->getRuntimePath() . 'imager/');
+    }
 
     /**
      * Creates the target filename
@@ -599,7 +572,7 @@ class ImagerService extends BaseApplicationComponent
                         $optString .= ($optK . '-' . $optV . '-');
                     }
 
-                    $r .= '_' . (isset(ImagerService::$transformKeyTranslate[$k]) ? ImagerService::$transformKeyTranslate[$k] : $k) . '_' . substr($optString, 0, strlen($optString)-1);
+                    $r .= '_' . (isset(ImagerService::$transformKeyTranslate[$k]) ? ImagerService::$transformKeyTranslate[$k] : $k) . '_' . substr($optString, 0, strlen($optString) - 1);
                 } else {
                     $r .= '_' . (isset(ImagerService::$transformKeyTranslate[$k]) ? ImagerService::$transformKeyTranslate[$k] : $k) . (is_array($v) ? implode("-",
                         $v) : $v);
@@ -970,21 +943,21 @@ class ImagerService extends BaseApplicationComponent
     private function _saveAsWebp($imageInstance, $path, $sourceExtension, $saveOptions)
     {
         if ($this->getSetting('useCwebp')) {
-            
+
             // save temp file
             $tempFile = $this->_saveTemporaryFile($imageInstance, $sourceExtension);
-            
+
             // convert to webp with cwebp
-            $command = escapeshellcmd($this->getSetting('cwebpPath') . ' ' . $this->getSetting('cwebpOptions') .  ' -q ' . $saveOptions['webp_quality'] . ' ' . $tempFile . ' -o ' . $path);
+            $command = escapeshellcmd($this->getSetting('cwebpPath') . ' ' . $this->getSetting('cwebpOptions') . ' -q ' . $saveOptions['webp_quality'] . ' ' . $tempFile . ' -o ' . $path);
             $r = shell_exec($command);
-            
+
             if (!IOHelper::fileExists($path)) {
                 throw new Exception(Craft::t('Save operation failed'));
             }
-            
+
             // delete temp file
             IOHelper::deleteFile($tempFile);
-            
+
         } else {
             if ($this->imageDriver === 'gd') {
                 $instance = $imageInstance->getGdResource();
@@ -1006,15 +979,15 @@ class ImagerService extends BaseApplicationComponent
                 $instance->setImageAlphaChannel(\Imagick::ALPHACHANNEL_ACTIVATE);
                 $instance->setBackgroundColor(new \ImagickPixel('transparent'));
                 $instance->setImageCompressionQuality($saveOptions['webp_quality']);
-                
+
                 $imagickOptions = $saveOptions['webp_imagick_options'];
-                
-                if ($imagickOptions && count($imagickOptions)>0) {
-                    foreach ($imagickOptions as $key=>$val) {
+
+                if ($imagickOptions && count($imagickOptions) > 0) {
+                    foreach ($imagickOptions as $key => $val) {
                         $instance->setOption('webp:' . $key, $val);
                     }
                 }
-                
+
                 $instance->writeImage($path);
             }
         }
@@ -1045,7 +1018,7 @@ class ImagerService extends BaseApplicationComponent
 
     /**
      * Save temporary file and return filename
-     * 
+     *
      * @param $imageInstance
      * @param $sourceExtension
      * @return string
@@ -1053,7 +1026,7 @@ class ImagerService extends BaseApplicationComponent
     private function _saveTemporaryFile($imageInstance, $sourceExtension)
     {
         $tempPath = craft()->path->getRuntimePath() . 'imager/temp/';
-        
+
         // check if the path exists
         if (!IOHelper::getRealPath($tempPath)) {
             IOHelper::createFolder($tempPath, craft()->config->get('defaultFolderPermissions'), true);
@@ -1063,7 +1036,7 @@ class ImagerService extends BaseApplicationComponent
                   array('tempPath' => $tempPath)));
             }
         }
-        
+
         $targetFilePath = $tempPath . md5(time()) . '.' . $sourceExtension;
 
         $saveOptions = array(
@@ -1356,6 +1329,9 @@ class ImagerService extends BaseApplicationComponent
                 case 'jpegtran':
                     $this->makeTask('Imager_Jpegtran', $file);
                     break;
+                case 'mozjpeg':
+                    $this->makeTask('Imager_Mozjpeg', $file);
+                    break;
                 case 'optipng':
                     $this->makeTask('Imager_Optipng', $file);
                     break;
@@ -1370,6 +1346,9 @@ class ImagerService extends BaseApplicationComponent
                     break;
                 case 'jpegtran':
                     $this->runJpegtran($file);
+                    break;
+                case 'mozjpeg':
+                    $this->runMozjpeg($file);
                     break;
                 case 'optipng':
                     $this->runOptipng($file);
@@ -1409,6 +1388,25 @@ class ImagerService extends BaseApplicationComponent
         $cmd = $this->getSetting('jpegtranPath');
         $cmd .= ' ';
         $cmd .= $this->getSetting('jpegtranOptionString');
+        $cmd .= ' -outfile ';
+        $cmd .= $file;
+        $cmd .= ' ';
+        $cmd .= $file;
+
+        $this->executeOptimize($cmd, $file);
+    }
+
+    /**
+     * Run mozjpeg optimization
+     *
+     * @param $file
+     * @param $transform
+     */
+    public function runMozjpeg($file)
+    {
+        $cmd = $this->getSetting('mozjpegPath');
+        $cmd .= ' ';
+        $cmd .= $this->getSetting('mozjpegOptionString');
         $cmd .= ' -outfile ';
         $cmd .= $file;
         $cmd .= ' ';
@@ -1466,69 +1464,7 @@ class ImagerService extends BaseApplicationComponent
         }
     }
 
-
-    /**
-     * ---- AWS -----------------------------------------------------------------------------------------------------------
-     */
-
-
-    public function uploadToAWS($filePath)
-    {
-        if (is_null($this->s3)) {
-            $this->s3 = new \S3($this->getSetting('awsAccessKey'), $this->getSetting('awsSecretAccessKey'));
-            $this->s3->setExceptions(true);
-        }
-
-        $file = $this->s3->inputFile($filePath);
-        $headers = $this->getSetting('awsRequestHeaders');
-
-        if (!isset($headers['Cache-Control'])) {
-            $headers['Cache-Control'] = 'max-age=' . $this->getSetting('awsCacheDuration') . ', must-revalidate';
-        }
-
-        if (!$this->s3->putObject($file, $this->getSetting('awsBucket'),
-          ImagerService::fixSlashes($this->getSetting('awsFolder') . '/' . str_replace($this->getSetting('imagerSystemPath'), '', $filePath), true, true), \S3::ACL_PUBLIC_READ, array(), $headers,
-          $this->_getAWSStorageClass())
-        ) //fail
-        {
-            ImagerPlugin::log("Upload to AWS failed for $filePath in ImagerService", LogLevel::Error);
-        }
-    }
-
-
-    private function _getAWSStorageClass()
-    {
-        switch ($this->getSetting('awsStorageType')) {
-            case 'standard':
-                return \S3::STORAGE_CLASS_STANDARD;
-            case 'rrs':
-                return \S3::STORAGE_CLASS_RRS;
-        }
-        return \S3::STORAGE_CLASS_STANDARD;
-    }
-
-
-    /**
-     * ---- Settings ------------------------------------------------------------------------------------------------------
-     */
-
-    /**
-     * Gets a plugin setting
-     *
-     * @param $name String Setting name
-     * @return mixed Setting value
-     * @author André Elvan
-     */
-    public function getSetting($name, $transform = null)
-    {
-        if ($this->configModel === null) {
-            $this->configModel = new Imager_ConfigModel();
-        }
-
-        return $this->configModel->getSetting($name, $transform);
-    }
-
-
+    
     /**
      * Registers a Task with Craft, taking into account if there is already one pending
      *
@@ -1566,7 +1502,8 @@ class ImagerService extends BaseApplicationComponent
 
         $this->taskCreated = true;
     }
-
+    
+    
     /**
      * Method that triggers any pending tasks immediately.
      */
@@ -1605,8 +1542,29 @@ class ImagerService extends BaseApplicationComponent
             }
         }
     }
+    
 
+    /**
+     * ---- Settings ------------------------------------------------------------------------------------------------------
+     */
 
+    /**
+     * Gets a plugin setting
+     *
+     * @param $name String Setting name
+     * @return mixed Setting value
+     * @author André Elvan
+     */
+    public function getSetting($name, $transform = null)
+    {
+        if ($this->configModel === null) {
+            $this->configModel = new Imager_ConfigModel();
+        }
+
+        return $this->configModel->getSetting($name, $transform);
+    }
+
+    
     /**
      * ---- Helper functions -------------------------------------------------------------------------------------------
      */
@@ -1653,41 +1611,7 @@ class ImagerService extends BaseApplicationComponent
         return $new_arr;
     }
 
-
-    /**
-     * rgb2hex
-     *
-     * @param array $rgb
-     * @return string
-     */
-    static function rgb2hex($rgb)
-    {
-        return '#' . sprintf('%02x', $rgb[0]) . sprintf('%02x', $rgb[1]) . sprintf('%02x', $rgb[2]);
-    }
-
-    /**
-     * hex2rgb
-     *
-     * @param string $hex
-     * @return array
-     */
-    static function hex2rgb($hex)
-    {
-        $hex = str_replace("#", "", $hex);
-
-        if (strlen($hex) == 3) {
-            $r = hexdec($hex[0] . $hex[0]);
-            $g = hexdec($hex[1] . $hex[1]);
-            $b = hexdec($hex[2] . $hex[2]);
-        } else {
-            $r = hexdec($hex[0] . $hex[1]);
-            $g = hexdec($hex[2] . $hex[3]);
-            $b = hexdec($hex[4] . $hex[5]);
-        }
-
-        return array($r, $g, $b);
-    }
-
+    
     /**
      * Fixes slashes in path
      *
@@ -1713,17 +1637,6 @@ class ImagerService extends BaseApplicationComponent
         return $r;
     }
 
-    /**
-     * @param $palette
-     * @return array
-     */
-    private function _paletteToHex($palette)
-    {
-        $r = array();
-        foreach ($palette as $paletteColor) {
-            array_push($r, ImagerService::rgb2hex($paletteColor));
-        }
-        return $r;
-    }
+    
 
 }
