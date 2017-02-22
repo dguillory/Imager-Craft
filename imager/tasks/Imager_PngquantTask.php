@@ -11,13 +11,13 @@ namespace Craft;
  * @link        https://github.com/aelvan/Imager-Craft
  */
 
-class Imager_MozjpegTask extends BaseTask
+class Imager_PngquantTask extends BaseTask
 {
     private $_paths;
 
     public function getDescription()
     {
-        return Craft::t('Optimizing images with mozjpeg');
+        return Craft::t('Optimizing images with pngquant');
     }
 
     /**
@@ -49,15 +49,15 @@ class Imager_MozjpegTask extends BaseTask
             $path = $this->_paths;
         }
 
-        // Run TinyPNG 
-        craft()->imager->runMozjpeg($path);
+        // Run pngquant 
+        craft()->imager->runPngquant($path);
         
         // if AWS is enabled, upload file
         if (craft()->imager->getSetting('awsEnabled')) {
             try {
                 craft()->imager_aws->uploadToAWS($path);
             } catch (\Exception $e) {
-                ImagerPlugin::log("Upload to AWS failed for $path in Imager_MozjpegTask: " . $e->getMessage(), LogLevel::Error);
+                ImagerPlugin::log("Upload to AWS failed for $path in Imager_PngquantTask: " . $e->getMessage(), LogLevel::Error);
             }
         }
 
@@ -66,7 +66,7 @@ class Imager_MozjpegTask extends BaseTask
             try {
                 craft()->imager_gcs->uploadToGCS($path);
             } catch (\Exception $e) {
-                ImagerPlugin::log("Upload to GCS failed for $path in Imager_MozjpegTask: " . $e->getMessage(), LogLevel::Error);
+                ImagerPlugin::log("Upload to GCS failed for $path in Imager_PngquantTask: " . $e->getMessage(), LogLevel::Error);
             }
         }
 

@@ -220,6 +220,16 @@ By default, both in Imager and Craft's built in transform functionality, the ori
 
 If set to `true`, the original image is only loaded once, and every transform will continue working on the same image instance. This significantly increases performance and memory use, but will most likely decrease quality. See [this demo page](http://imager.vaersaagod.no/?img=5&demo=batch-reuse) for an example of how it works.
 
+### noop [bool]
+*Default: `false`*  
+Setting `noop` (no operation) to `true` makes Imager return the source image untouched. Useful if you don't want to do image transforms in
+some environments.
+
+### suppressExceptions [bool]
+*Default: `false`*  
+By default Imager throws exceptions if file based operations fail, an external image can't be downloaded, etc. If `suppressExceptions` is set 
+to `true`, Imager will instead log errors to the log file, and return `null` to the template.   
+
 ### jpegoptimEnabled [bool]
 *Default: `false`*  
 Enable or disable image optimizations with [jpegoptim](https://github.com/tjko/jpegoptim).
@@ -267,6 +277,18 @@ Sets the path to your optipng executable.
 ### optipngOptionString [string]
 *Default: `'-o5'`*  
 Sets the options to use when running optipng. By default the image file is optimized with level 5 optimizations.
+
+### pngquantEnabled [bool]
+*Default: `false`*  
+Enable or disable image optimizations with [pngquant](https://pngquant.org/).
+
+### pngquantPath [string]
+*Default: `'/usr/bin/pngquant'`*  
+Sets the path to your pngquant executable.
+
+### pngquantOptionString [string]
+*Default: `'--strip --skip-if-larger'`*  
+Sets the options to use when running pngquant. Output file (`-o`) and force overwrite (`-f`) is added by Imager and should not be set in `pngquantOptionString`. 
 
 ### tinyPngEnabled [bool]
 *Default: `false`*  
@@ -321,6 +343,34 @@ Additional request headers to send to AWS.
 *Default: `'standard'`*  
 *Allowed values: `'standard'`, `'rrs'`*   
 Sets the AWS storage type. 
+
+### gcsEnabled [bool]
+*Default: `false`*  
+Enables or disables uploading of transformed images to Google Cloud Storage.
+
+*Please note; even if images are uploaded to GCS, they will also be stored in the Imager system path for caching and cache breaking purposes. *
+
+### gcsAccessKey [string]
+*Default: `''`*  
+Google Cloud Storage access key.
+
+### gcsSecretAccessKey [string]
+*Default: `''`*  
+Google Cloud Storage secret key.
+
+### gcsBucket [string]
+*Default: `''`*  
+Google Cloud Storage bucket name.
+
+### gcsFolder [string]
+*Default: `''`*  
+Subfolder inside the Google Cloud Storage bucket where you want to put the transformed images.
+
+### gcsCacheDuration [int]
+*Default: `1209600`*  
+Cache duration of files on Google Cloud Storage.
+
+*Please note; this has nothing to do with how long a transform is cached, it is only used to tell Google what HTTP expiry headers to set on the file.*
 
 ### cloudfrontInvalidateEnabled [bool]
 *Default: `false`*  
@@ -379,7 +429,7 @@ If you've ever done an image transform in a Craft template, this probably looks 
 The same code using Imager would look like this:
 
     {% set image = craft.assets().limit(1).first() %}
-    {% set transformedImage = craft.imager.transformImage(image, { width: 1000 })
+    {% set transformedImage = craft.imager.transformImage(image, { width: 1000 }) %}
     <img src="{{ transformedImage.url }}">
 
 So far, it's more code than the Craft way. But, let's say you need to resize the image to six different widths, because you're using <picture> and srcset to serve up responsive images (in a modern and futureproof way). And you want the crop position on all the images to be in the bottom-right corner, an aspect ratio of 16:9, and while the large images should have a high jpeg quality, the smaller ones should be more optimized. 

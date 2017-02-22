@@ -43,6 +43,8 @@ return array(
   'hashPath' => false, 
   'hashRemoteUrl' => false, // true, false, or 'host' (meaning only the host part of the url is hashed) 
   'instanceReuseEnabled' => false,
+  'noop' => false,
+  'suppressExceptions' => false,
   
   'jpegoptimEnabled' => false,
   'jpegoptimPath' => '/usr/bin/jpegoptim',
@@ -56,6 +58,9 @@ return array(
   'optipngEnabled' => false,
   'optipngPath' => '/usr/bin/optipng',
   'optipngOptionString' => '-o5',
+  'pngquantEnabled' => false,
+  'pngquantPath' => '/usr/bin/pngquant',
+  'pngquantOptionString' => '--strip --skip-if-larger',
   'tinyPngEnabled' => false,
   'tinyPngApiKey' => '',
   'optimizeType' => 'task',
@@ -68,7 +73,14 @@ return array(
   'awsFolder' => '',
   'awsCacheDuration' => 1209600, // 14 days
   'awsRequestHeaders' => array(),
-  'awsStorageType' => 'standard', // 'standard' or 'rrs' (reduced redundancy storage)
+  'awsStorageType' => 'standard', // 'standard' or 'rrs' (reduced redundancy storage),
+
+  'gcsEnabled' => false,
+  'gcsAccessKey' => '',
+  'gcsSecretAccessKey' => '',
+  'gcsBucket' => '',
+  'gcsFolder' => '',
+  'gcsCacheDuration' => 1209600, // 14 days
 
   'cloudfrontInvalidateEnabled' => false,
   'cloudfrontDistributionId' => '',

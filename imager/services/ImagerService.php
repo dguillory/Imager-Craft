@@ -11,8 +11,6 @@ namespace Craft;
  * @link        https://github.com/aelvan/Imager-Craft
  */
 
-use Tinify;
-
 class ImagerService extends BaseApplicationComponent
 {
     var $imageDriver = 'gd';
@@ -143,7 +141,7 @@ class ImagerService extends BaseApplicationComponent
             }
         }
     }
-    
+
 
     /**
      * Do an image transform
@@ -154,7 +152,7 @@ class ImagerService extends BaseApplicationComponent
      * @param Array $configOverrides
      *
      * @throws Exception
-     * @return Image
+     * @return array|Image
      */
     public function transformImage($image, $transform, $transformDefaults, $configOverrides)
     {
@@ -170,33 +168,64 @@ class ImagerService extends BaseApplicationComponent
          * Check all the things that could go wrong(tm)
          */
         if (!IOHelper::getRealPath($pathsModel->sourcePath)) {
-            throw new Exception(Craft::t('Source folder “{sourcePath}” does not exist',
-              array('sourcePath' => $pathsModel->sourcePath)));
+            $msg = Craft::t('Source folder “{sourcePath}” does not exist', array('sourcePath' => $pathsModel->sourcePath));
+            
+            if (craft()->imager->getSetting('suppressExceptions')===true) {
+                ImagerPlugin::log($msg, LogLevel::Error);
+                return null;
+            } else {
+                throw new Exception($msg);
+            }
         }
 
         if (!IOHelper::getRealPath($pathsModel->targetPath)) {
             IOHelper::createFolder($pathsModel->targetPath, craft()->config->get('defaultFolderPermissions'), true);
 
             if (!IOHelper::getRealPath($pathsModel->targetPath)) {
-                throw new Exception(Craft::t('Target folder “{targetPath}” does not exist and could not be created',
-                  array('targetPath' => $pathsModel->targetPath)));
+                $msg = Craft::t('Target folder “{targetPath}” does not exist and could not be created', array('targetPath' => $pathsModel->targetPath));
+                
+                if (craft()->imager->getSetting('suppressExceptions')===true) {
+                    ImagerPlugin::log($msg, LogLevel::Error);
+                    return null;
+                } else {
+                    throw new Exception($msg);
+                }
             }
-            
+
             $pathsModel->targetPath = IOHelper::getRealPath($pathsModel->targetPath);
         }
 
         if ($pathsModel->targetPath && !IOHelper::isWritable($pathsModel->targetPath)) {
-            throw new Exception(Craft::t('Target folder “{targetPath}” is not writeable',
-              array('targetPath' => $pathsModel->targetPath)));
+            $msg = Craft::t('Target folder “{targetPath}” is not writeable', array('targetPath' => $pathsModel->targetPath));
+            
+            if (craft()->imager->getSetting('suppressExceptions')===true) {
+                ImagerPlugin::log($msg, LogLevel::Error);
+                return null;
+            } else {
+                throw new Exception($msg);
+            }            
         }
 
         if (!IOHelper::fileExists($pathsModel->sourcePath . $pathsModel->sourceFilename)) {
-            throw new Exception(Craft::t('Requested image “{fileName}” does not exist in path “{sourcePath}”',
-              array('fileName' => $pathsModel->sourceFilename, 'sourcePath' => $pathsModel->sourcePath)));
+            $msg = Craft::t('Requested image “{fileName}” does not exist in path “{sourcePath}”', array('fileName' => $pathsModel->sourceFilename, 'sourcePath' => $pathsModel->sourcePath));
+            
+            if (craft()->imager->getSetting('suppressExceptions')===true) {
+                ImagerPlugin::log($msg, LogLevel::Error);
+                return null;
+            } else {
+                throw new Exception($msg);
+            }    
         }
 
         if (!craft()->images->checkMemoryForImage($pathsModel->sourcePath . $pathsModel->sourceFilename)) {
-            throw new Exception(Craft::t("Not enough memory available to perform this image operation."));
+            $msg = Craft::t("Not enough memory available to perform this image operation.");
+
+            if (craft()->imager->getSetting('suppressExceptions')===true) {
+                ImagerPlugin::log($msg, LogLevel::Error);
+                return null;
+            } else {
+                throw new Exception($msg);
+            }    
         }
 
 
@@ -226,12 +255,12 @@ class ImagerService extends BaseApplicationComponent
         if (craft()->request->isAjaxRequest() && $this->taskCreated && $this->getSetting('runTasksImmediatelyOnAjaxRequests')) {
             $this->_triggerTasksNow();
         }
-        
-        if (count($this->invalidatePaths)>0) {
+
+        if (count($this->invalidatePaths) > 0) {
             craft()->imager_aws->invalidateCloudfrontPaths($this->invalidatePaths);
             $this->invalidatePaths = array();
         }
-        
+
         return $r;
     }
 
@@ -247,6 +276,10 @@ class ImagerService extends BaseApplicationComponent
      */
     private function _getTransformedImage($paths, $transform)
     {
+        if ($this->getSetting('noop')) {
+            return new Imager_ImageModel($paths->sourcePath, $paths->sourceUrl, $paths, $transform);
+        }
+
         // break up the image filename to get extension and actual filename 
         $pathParts = pathinfo($paths->targetFilename);
 
@@ -343,7 +376,7 @@ class ImagerService extends BaseApplicationComponent
             if (($sourceExtension != $targetExtension) && ($sourceExtension != 'jpg') && ($targetExtension == 'jpg') && ($this->getSetting('bgColor', $transform) != '')) {
                 $this->_applyBackgroundColor($this->imageInstance, $this->getSetting('bgColor', $transform));
             }
-            
+
             // save the transform
             if ($targetExtension === 'webp') {
                 if ($this->hasSupportForWebP()) {
@@ -370,8 +403,13 @@ class ImagerService extends BaseApplicationComponent
                     }
                 }
 
-                if ($targetExtension == 'png' && $this->getSetting('optipngEnabled', $transform)) {
-                    $this->postOptimize('optipng', $targetFilePath);
+                if ($targetExtension == 'png') {
+                    if ($this->getSetting('optipngEnabled', $transform)) {
+                        $this->postOptimize('optipng', $targetFilePath);
+                    }
+                    if ($this->getSetting('pngquantEnabled', $transform)) {
+                        $this->postOptimize('pngquant', $targetFilePath);
+                    }
                 }
 
                 if ($this->getSetting('tinyPngEnabled', $transform)) {
@@ -381,12 +419,17 @@ class ImagerService extends BaseApplicationComponent
                 // Upload to AWS if enabled
                 if ($this->getSetting('awsEnabled')) {
                     craft()->imager_aws->uploadToAWS($targetFilePath);
-                    
+
                     // Invalidate cloudfront distribution if enabled
                     if ($this->getSetting('cloudfrontInvalidateEnabled')) {
                         $parsedUrl = parse_url($targetFileUrl);
                         $this->invalidatePaths[] = $parsedUrl['path'];
                     }
+                }
+
+                // if GCS is enabled, upload file
+                if (craft()->imager->getSetting('gcsEnabled')) {
+                    craft()->imager_gcs->uploadToGCS($targetFilePath);
                 }
             }
         }
@@ -1091,7 +1134,14 @@ class ImagerService extends BaseApplicationComponent
 
             if ($effect == 'colorize') {
                 $color = $imageInstance->palette()->color($value);
-                $imageInstance->effects()->colorize($color);
+                
+                // Fix for new behavior of colorizeImage in newer versions of imagick. Fixed in upstream version of Imagine, but not merged with Craft yet. Remove when added. 
+                if ($this->imageDriver==='imagick') {
+                    $imagickInstance = $imageInstance->getImagick();
+                    $imagickInstance->colorizeImage((string) $color, new \ImagickPixel(sprintf('rgba(%d, %d, %d, 1)', $color->getRed(), $color->getGreen(), $color->getBlue())));
+                } else {
+                    $imageInstance->effects()->colorize($color);
+                }
             }
 
             /**
@@ -1336,6 +1386,9 @@ class ImagerService extends BaseApplicationComponent
                 case 'optipng':
                     $this->makeTask('Imager_Optipng', $file);
                     break;
+                case 'pngquant':
+                    $this->makeTask('Imager_Pngquant', $file);
+                    break;
                 case 'tinypng':
                     $this->makeTask('Imager_TinyPng', $file);
                     break;
@@ -1354,6 +1407,9 @@ class ImagerService extends BaseApplicationComponent
                 case 'optipng':
                     $this->runOptipng($file);
                     break;
+                case 'pngquant':
+                    $this->runPngquant($file);
+                    break;
                 case 'tinypng':
                     $this->runTinyPng($file);
                     break;
@@ -1369,13 +1425,17 @@ class ImagerService extends BaseApplicationComponent
      */
     public function runJpegoptim($file)
     {
-        $cmd = $this->getSetting('jpegoptimPath');
-        $cmd .= ' ';
-        $cmd .= $this->getSetting('jpegoptimOptionString');
-        $cmd .= ' ';
-        $cmd .= $file;
-
-        $this->executeOptimize($cmd, $file);
+        if (file_exists($this->getSetting('jpegoptimPath'))) {
+            $cmd = $this->getSetting('jpegoptimPath');
+            $cmd .= ' ';
+            $cmd .= $this->getSetting('jpegoptimOptionString');
+            $cmd .= ' ';
+            $cmd .= $file;
+    
+            $this->executeOptimize($cmd, $file);
+        } else {
+            ImagerPlugin::log("jpegoptim could not be found in the supplied path (" . $this->getSetting('jpegoptimPath') . ")", LogLevel::Error);
+        }
     }
 
     /**
@@ -1386,15 +1446,19 @@ class ImagerService extends BaseApplicationComponent
      */
     public function runJpegtran($file)
     {
-        $cmd = $this->getSetting('jpegtranPath');
-        $cmd .= ' ';
-        $cmd .= $this->getSetting('jpegtranOptionString');
-        $cmd .= ' -outfile ';
-        $cmd .= $file;
-        $cmd .= ' ';
-        $cmd .= $file;
-
-        $this->executeOptimize($cmd, $file);
+        if (file_exists($this->getSetting('jpegtranPath'))) {
+            $cmd = $this->getSetting('jpegtranPath');
+            $cmd .= ' ';
+            $cmd .= $this->getSetting('jpegtranOptionString');
+            $cmd .= ' -outfile ';
+            $cmd .= $file;
+            $cmd .= ' ';
+            $cmd .= $file;
+    
+            $this->executeOptimize($cmd, $file);
+        } else {
+            ImagerPlugin::log("jpegtran could not be found in the supplied path (" . $this->getSetting('jpegtranPath') . ")", LogLevel::Error);
+        }
     }
 
     /**
@@ -1405,15 +1469,19 @@ class ImagerService extends BaseApplicationComponent
      */
     public function runMozjpeg($file)
     {
-        $cmd = $this->getSetting('mozjpegPath');
-        $cmd .= ' ';
-        $cmd .= $this->getSetting('mozjpegOptionString');
-        $cmd .= ' -outfile ';
-        $cmd .= $file;
-        $cmd .= ' ';
-        $cmd .= $file;
-
-        $this->executeOptimize($cmd, $file);
+        if (file_exists($this->getSetting('mozjpegPath'))) {
+            $cmd = $this->getSetting('mozjpegPath');
+            $cmd .= ' ';
+            $cmd .= $this->getSetting('mozjpegOptionString');
+            $cmd .= ' -outfile ';
+            $cmd .= $file;
+            $cmd .= ' ';
+            $cmd .= $file;
+    
+            $this->executeOptimize($cmd, $file);
+        } else {
+            ImagerPlugin::log("mozjpeg could not be found in the supplied path (" . $this->getSetting('mozjpegPath') . ")", LogLevel::Error);
+        }
     }
 
     /**
@@ -1424,13 +1492,41 @@ class ImagerService extends BaseApplicationComponent
      */
     public function runOptipng($file)
     {
-        $cmd = $this->getSetting('optipngPath');
-        $cmd .= ' ';
-        $cmd .= $this->getSetting('optipngOptionString');
-        $cmd .= ' ';
-        $cmd .= $file;
+        if (file_exists($this->getSetting('optipngPath'))) {
+            $cmd = $this->getSetting('optipngPath');
+            $cmd .= ' ';
+            $cmd .= $this->getSetting('optipngOptionString');
+            $cmd .= ' ';
+            $cmd .= $file;
+    
+            $this->executeOptimize($cmd, $file);
+        } else {
+            ImagerPlugin::log("optipng could not be found in the supplied path (" . $this->getSetting('optipngPath') . ")", LogLevel::Error);
+        }
+    }
 
-        $this->executeOptimize($cmd, $file);
+    /**
+     * Run pngquant optimization
+     *
+     * @param $file
+     * @param $transform
+     */
+    public function runPngquant($file)
+    {
+        if (file_exists($this->getSetting('pngquantPath'))) {
+            $cmd = $this->getSetting('pngquantPath');
+            $cmd .= ' ';
+            $cmd .= $this->getSetting('pngquantOptionString');
+            $cmd .= ' ';
+            $cmd .= '-f -o ';
+            $cmd .= $file;
+            $cmd .= ' ';
+            $cmd .= $file;
+    
+            $this->executeOptimize($cmd, $file);
+        } else {
+            ImagerPlugin::log("pngquant could not be found in the supplied path (" . $this->getSetting('pngquantPath') . ")", LogLevel::Error);
+        }
     }
 
     /**
@@ -1465,7 +1561,7 @@ class ImagerService extends BaseApplicationComponent
         }
     }
 
-    
+
     /**
      * Registers a Task with Craft, taking into account if there is already one pending
      *
@@ -1503,8 +1599,8 @@ class ImagerService extends BaseApplicationComponent
 
         $this->taskCreated = true;
     }
-    
-    
+
+
     /**
      * Method that triggers any pending tasks immediately.
      */
@@ -1543,7 +1639,7 @@ class ImagerService extends BaseApplicationComponent
             }
         }
     }
-    
+
 
     /**
      * ---- Settings ------------------------------------------------------------------------------------------------------
@@ -1565,7 +1661,7 @@ class ImagerService extends BaseApplicationComponent
         return $this->configModel->getSetting($name, $transform);
     }
 
-    
+
     /**
      * ---- Helper functions -------------------------------------------------------------------------------------------
      */
@@ -1612,7 +1708,7 @@ class ImagerService extends BaseApplicationComponent
         return $new_arr;
     }
 
-    
+
     /**
      * Fixes slashes in path
      *
@@ -1638,6 +1734,5 @@ class ImagerService extends BaseApplicationComponent
         return $r;
     }
 
-    
 
 }
