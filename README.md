@@ -215,6 +215,10 @@ If you set this to `true`, the whole url will be hashed and used as the path.
 
 If set to `'host'`, only the hostname will be hashed, while the remote path will be kept. 
 
+### useRemoteUrlQueryString [bool]
+*Default: `false`*  
+By default, query strings on external urls are not used when creating the filename of the transformed file, to improve caching. When enabled, any query string on the external url will be hashed and added as a part of the filename.  
+
 ### instanceReuseEnabled [bool]
 *Default: `false`*  
 By default, both in Imager and Craft's built in transform functionality, the original image is loaded into memory for every transform. This ensures that the quality of the resulting transform is as good as possible. 
@@ -230,6 +234,10 @@ some environments.
 *Default: `false`*  
 By default Imager throws exceptions if file based operations fail, an external image can't be downloaded, etc. If `suppressExceptions` is set 
 to `true`, Imager will instead log errors to the log file, and return `null` to the template.   
+
+### convertToRGB [bool]
+*Default: `false`*  
+Enable this setting to ensure that transformed images are saved as RGB.    
 
 ### fillTransforms [bool]
 *Default: `false`*  
@@ -328,6 +336,10 @@ The TinyPNG API key.
 *Default: `'task'`*  
 *Allowed values: `'task'`, `'runtime'`*   
 By default all post-transform optimizations are done as a Craft task that is run after the request has ended. This speeds up the initial transform request, but makes non-optimized images available for a short while until the task has been run. If set to `'runtime'`, all optimizations will be run immediately.
+
+### skipExecutableExistCheck [string]
+*Default: `false`*  
+By default Imager will check if the executables for the post-transform optimizations exists. If you have basedir restrictions on, or for some other reason doesn't want to do this check, set this to true.
 
 ### logOptimizations [bool]
 *Default: `false`*  
@@ -526,17 +538,18 @@ The main transform method. Returns either an Imager_ImageModel (see documentatio
 **transformDefaults**: An object containing any default transform settings that should be applied to each transform. If transform properties given here are specified in an individual transform, the property value of the individual transform will be used.    
 **configOverrides**: An object containing any overrides to the default config settings that should be used for this transform. See the "Configuration"-section for information on which settings that can be overridden.
 
-### craft.imager.base64Pixel([width=1, height=1])
+### craft.imager.base64Pixel([width=1, height=1, color='transparent'])
 Outputs a base64 encoded SVG image. 
 
 **width**: Width of the placeholder. Defaults to '1'.  
 **height**: Height of the placeholder. Defaults to '1'.
+**color**: Color of the placeholder. Defaults to 'transparent'.
 
 ### craft.imager.srcset(images [, descriptor='w'])
 Outputs a srcset string from an array of transformed images.
 
 **images**: An array of Imager_ImageModel objects, or anything else that support the interface.  
-**descriptior**: A string indicating which size descriptor should be used in the srcset. *Only 'w' is supported at the moment.*
+**descriptior**: A string indicating which size descriptor should be used in the srcset. 'w', 'h' and 'w+h' is supported at the moment. Please note that 'h' isn't standards-compliant, but is useful for instance when using Lazysizes and their bgset plugin.
 
 ### craft.imager.serverSupportsWebp()
 Returns `true` or `false` depending on if the server has support for webp or not. This could either indicate built in support for webp in the current image driver, GD or Imagick, or the presence of the cwebp binary if this has been enabled.  
@@ -570,6 +583,10 @@ Converts a hexadecimal color value to rgb. Input value must be a string. Output 
 
 ### craft.imager.rgb2hex(color)
 Converts a rgb color value to hexadecimal. Input value must be an array with red as index 0, green as index 1 and blue as index 2. Output value is a string.
+
+### craft.imager.isAnimated(image)
+Returns `true` or `false` depending on if the supplied image is animated or not (only gif support at the moment).   
+
 
 ---
 
