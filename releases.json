@@ -1,5 +1,66 @@
 [
     {
+        "version": "1.6.4",
+        "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
+        "date": "2017-10-17T12:30:00+02:00",
+        "notes": [
+            "[Added] Added frames transform parameter that let's you extract certain frames and ranges of frames from animated gifs.",
+            "[Added] Added levels effect.",
+            "[Fixed] Fixed a rounding bug that would occur if original image aspect and transformed image aspect was the same, and letterbox mode was used. (Thanks for tracking that down, @christianruhstaller!)",
+            "[Fixed] Fixed a bug where really tiny transforms (think LQIP) would result in zero pixel transform exceptions."
+        ]
+    },
+    {
+        "version": "1.6.3",
+        "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
+        "date": "2017-08-13T19:25:00+02:00",
+        "notes": [
+            "[Added] Added awsCacheDurationNonOptimized and gcsCacheDurationNonOptimized config settings which specifies the cache duration of non-optimized files that will be overwritten by an optimization task. (Thanks, @kringkaste)",
+            "[Fixed] Fixed a bug where opacity would be lost for pngs when using the grayscale effect.",
+            "[Fixed] Fixed bug where activated alpha channel when saving non-transparent images to webp would create corrupted images.",
+            "[Fixed] Added check for effects taking a bool, it will now only be applied if the value is true.",
+            "[Fixed] Fixed an error in colorBlend when using ImageMagick 7."
+        ]
+    },
+    {
+        "version": "1.6.2",
+        "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
+        "date": "2017-07-18T23:12:00+02:00",
+        "notes": [
+            "[Added] Added the imgixDefaultParams config setting which can be used to set default parameters that will be passed to all Imgix transforms.",
+            "[Improved] Improved conversion of Imager quality settings to Imgix. We will now fall back to jpegQuality for unknown file extensions.",
+            "[Fixed] We now explicitly remove all overrideable config settings from the transform string, and purges any keys with empty values. Because Facebook. (Thanks, @benface!)"
+        ]
+    },
+    {
+        "version": "1.6.1",
+        "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
+        "date": "2017-07-13T17:38:00+02:00",
+        "notes": [
+            "[Added] The Craft source path will be prepended to the asset path if the source is a cloud one. Makes it possible to use one Imgix source for multiple Craft sources if they are on the same bucket with different subfolder. New config setting imgixUseCloudSourcePath to turn it off. (Thanks, @leevigraham)",
+            "[Improved] Refactored srcset, it's now available as a service method (craft()->imager->srcset), making it available to other plugins (ie Element API).",
+            "[Fixed] Fixed a bug where asset paths needs to be url encoded when sent to Imgix which would result in images with foreign characters not loading.",
+            "[Fixed] Fixed incorrect conversion of pngCompressionLevel to quality in Imgix.",
+            "[Fixed] Fixed a typo related to pngCompressionLevel and quality in Imgix."
+        ]
+    },
+    {
+        "version": "1.6.0",
+        "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
+        "date": "2017-07-12T22:59:00+02:00",
+        "notes": [
+            "[Added] Imgix support (it's huge!)."
+        ]
+    },
+    {
+        "version": "1.5.4",
+        "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
+        "date": "2017-07-10T14:34:00+02:00",
+        "notes": [
+            "[Fixed] Fixed an error that would result in a gif with two frames not being identified as animated."
+        ]
+    },
+    {
         "version": "1.5.3",
         "downloadUrl": "https://github.com/aelvan/Imager-Craft/archive/master.zip",
         "date": "2017-06-04T15:15:00+02:00",
